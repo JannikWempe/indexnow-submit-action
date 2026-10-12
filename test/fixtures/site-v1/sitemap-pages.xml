@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>http://localhost:8080/</loc><lastmod>2026-01-01</lastmod></url>
+  <url><loc>http://localhost:8080/about</loc><lastmod>2026-01-01</lastmod></url>
+  <url><loc>http://localhost:8080/pricing</loc></url>
+  <url><loc>http://localhost:8080/old</loc><lastmod>2026-01-01</lastmod></url>
+</urlset>
