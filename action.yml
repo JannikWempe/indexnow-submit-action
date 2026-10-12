@@ -1,0 +1,105 @@
+name: IndexNow Submit Changed URLs
+description: Submit only the sitemap URLs that were added, updated or removed since the last run to IndexNow.
+author: Jannik Wempe
+branding:
+  icon: send
+  color: blue
+
+inputs:
+  site-url:
+    description: Base URL of the site, e.g. https://example.com. Only sitemap URLs on its host are submitted.
+    required: true
+  key:
+    description: The IndexNow key. It is public by design (served at key-location).
+    required: true
+  sitemap-url:
+    description: Sitemap or sitemap index URL. Defaults to <site-url>/sitemap.xml.
+    required: false
+    default: ""
+  key-location:
+    description: URL of the key file. Defaults to <site-url>/<key>.txt.
+    required: false
+    default: ""
+  mode:
+    description: "`changed` submits URLs added, updated or removed since the last successful run. `all` submits every sitemap URL (plus removed ones) and still saves state."
+    required: false
+    default: changed
+  on-missing-state:
+    description: "What to do when no previous state exists: `baseline` records the current sitemap and submits nothing, `all` submits every URL."
+    required: false
+    default: baseline
+  endpoint:
+    description: IndexNow endpoint.
+    required: false
+    default: https://api.indexnow.org/indexnow
+  dry-run:
+    description: Compute and print the URLs, but don't submit them and don't save state.
+    required: false
+    default: "false"
+  cache-key-prefix:
+    description: Prefix for the GitHub Actions cache key that stores the state. The host is appended.
+    required: false
+    default: indexnow-state
+
+outputs:
+  submitted-count:
+    description: Number of URLs submitted (in dry-run, the number that would have been submitted).
+    value: ${{ steps.run.outputs.submitted-count }}
+  submitted-urls:
+    description: Newline-separated URLs submitted (in dry-run, those that would have been submitted).
+    value: ${{ steps.run.outputs.submitted-urls }}
+  added:
+    description: Number of URLs added since the last state.
+    value: ${{ steps.run.outputs.added }}
+  updated:
+    description: Number of URLs whose lastmod changed since the last state.
+    value: ${{ steps.run.outputs.updated }}
+  removed:
+    description: Number of URLs removed since the last state.
+    value: ${{ steps.run.outputs.removed }}
+
+runs:
+  using: composite
+  steps:
+    - id: prepare
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs" prepare
+      env:
+        INPUT_SITE_URL: ${{ inputs.site-url }}
+        INPUT_KEY: ${{ inputs.key }}
+        INPUT_SITEMAP_URL: ${{ inputs.sitemap-url }}
+        INPUT_KEY_LOCATION: ${{ inputs.key-location }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_ON_MISSING_STATE: ${{ inputs.on-missing-state }}
+        INPUT_ENDPOINT: ${{ inputs.endpoint }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        INPUT_CACHE_KEY_PREFIX: ${{ inputs.cache-key-prefix }}
+
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.prepare.outputs.state-dir }}
+        key: ${{ steps.prepare.outputs.save-key }}
+        restore-keys: ${{ steps.prepare.outputs.restore-key }}
+
+    - id: run
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs" run
+      env:
+        INDEXNOW_STATE_FILE: ${{ steps.prepare.outputs.state-file }}
+        INPUT_SITE_URL: ${{ inputs.site-url }}
+        INPUT_KEY: ${{ inputs.key }}
+        INPUT_SITEMAP_URL: ${{ inputs.sitemap-url }}
+        INPUT_KEY_LOCATION: ${{ inputs.key-location }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_ON_MISSING_STATE: ${{ inputs.on-missing-state }}
+        INPUT_ENDPOINT: ${{ inputs.endpoint }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        INPUT_CACHE_KEY_PREFIX: ${{ inputs.cache-key-prefix }}
+
+    # Only after every submission succeeded (the run step fails otherwise) and only
+    # when the state changed, so no-change runs don't pile up cache entries.
+    - if: steps.run.outputs.save-state == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.prepare.outputs.state-dir }}
+        key: ${{ steps.prepare.outputs.save-key }}
