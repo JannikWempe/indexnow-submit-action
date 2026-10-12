@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { cacheKeys, joinWithinLimit, parseConfig, readState, run, serializeState } from "../src/run.mjs";
+import { cacheKeys, joinWithinLimit, sharedBuildLastmod, parseConfig, readState, run, serializeState } from "../src/run.mjs";
 import { fakeFetch } from "./helpers.mjs";
 
 const config = parseConfig({ "site-url": "https://example.com/", key: "abcdef123456" });
@@ -200,5 +200,46 @@ describe("joinWithinLimit", () => {
   it("keeps only whole lines", () => {
     assert.deepEqual(joinWithinLimit(["ab", "cd", "ef"], 6), { text: "ab\ncd", count: 2 });
     assert.deepEqual(joinWithinLimit(["abc"], 2), { text: "", count: 0 });
+  });
+});
+
+describe("lastmod hints", () => {
+  const BUILD = "2026-10-12T08:00:00Z";
+  const stamped = `<urlset>
+  <url><loc>https://example.com/</loc><lastmod>${BUILD}</lastmod></url>
+  <url><loc>https://example.com/a</loc><lastmod>${BUILD}</lastmod></url>
+  <url><loc>https://example.com/b</loc></url>
+</urlset>`;
+  const before = new Map([
+    ["https://example.com/", "2026-10-11T08:00:00Z"],
+    ["https://example.com/a", "2026-10-11T08:00:00Z"],
+    ["https://example.com/b", null],
+  ]);
+
+  it("logs how many URLs have no lastmod", async () => {
+    const { deps } = setup({ "https://example.com/sitemap.xml": stamped });
+    /** @type {string[]} */
+    const logs = [];
+    await run(config, before, { ...deps, log: (m) => void logs.push(m) });
+    assert.ok(logs.some((m) => /^1 of 3 URLs have no <lastmod>/.test(m)));
+  });
+
+  it("warns when every lastmod changed to the same value", async () => {
+    const { warnings, deps } = setup({ "https://example.com/sitemap.xml": stamped });
+    await run(config, before, deps);
+    assert.match(warnings.join("\n"), /All 2 URLs with a <lastmod> changed to the same value \(2026-10-12T08:00:00Z\)/);
+  });
+
+  it("doesn't warn about real, differing lastmods", async () => {
+    const { warnings, deps } = setup();
+    await run(config, PREVIOUS, deps);
+    assert.doesNotMatch(warnings.join("\n"), /same value/);
+  });
+
+  it("sharedBuildLastmod needs two updates to one shared value", () => {
+    const current = new Map([["a", "x"], ["b", "x"], ["c", null]]);
+    assert.equal(sharedBuildLastmod(current, ["a", "b"]), "x");
+    assert.equal(sharedBuildLastmod(current, ["a"]), null);
+    assert.equal(sharedBuildLastmod(new Map([["a", "x"], ["b", "y"]]), ["a", "b"]), null);
   });
 });

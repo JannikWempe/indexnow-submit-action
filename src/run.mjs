@@ -146,6 +146,22 @@ export function serializeState(host, urls) {
 }
 
 /**
+ * Returns the shared lastmod when every URL that has one carries the same value and
+ * at least two of them were just updated to it: the signature of a sitemap generator
+ * stamping the build time. Returns null otherwise.
+ * @param {UrlMap} current
+ * @param {string[]} updated
+ * @returns {string | null}
+ */
+export function sharedBuildLastmod(current, updated) {
+  if (updated.length < 2) return null;
+  const values = new Set([...current.values()].filter((lastmod) => lastmod !== null));
+  if (values.size !== 1) return null;
+  const [value] = values;
+  return updated.every((url) => current.get(url) === value) ? value : null;
+}
+
+/**
  * Joins lines with newlines, keeping only as many whole lines as fit in `limit` characters.
  * @param {string[]} lines
  * @param {number} limit
@@ -211,6 +227,16 @@ export async function run(config, previous, deps = {}) {
   if (current.size === 0) throw new Error(`None of the ${all.size} sitemap URLs are on ${config.host}`);
   log(`Sitemap has ${current.size} URLs on ${config.host}`);
 
+  // Omitting lastmod is legitimate (Google: "or just the ones you're confident about"),
+  // so this is a log line, not a warning.
+  const missingLastmod = [...current.values()].filter((lastmod) => lastmod === null).length;
+  if (missingLastmod > 0) {
+    log(
+      `${missingLastmod} of ${current.size} URLs have no <lastmod>; content changes to them won't be detected, ` +
+        "only additions and removals",
+    );
+  }
+
   /** @type {Result["kind"]} */
   let kind;
   let diff = { added: /** @type {string[]} */ ([]), updated: /** @type {string[]} */ ([]), removed: /** @type {string[]} */ ([]) };
@@ -220,6 +246,14 @@ export async function run(config, previous, deps = {}) {
   if (previous) {
     diff = diffUrls(previous, current);
     kind = config.mode;
+    const lastmod = sharedBuildLastmod(current, diff.updated);
+    if (lastmod) {
+      warn(
+        `All ${diff.updated.length} URLs with a <lastmod> changed to the same value (${lastmod}). This looks like ` +
+          "the sitemap uses the build time instead of each page's last content change, so every page is " +
+          "submitted as updated on every deploy. Google and Bing ignore lastmod values they find inaccurate.",
+      );
+    }
     urls = config.mode === "all" ? [...current.keys(), ...diff.removed] : [...diff.added, ...diff.updated, ...diff.removed];
   } else if (config.mode === "all" || config.onMissingState === "all") {
     log("No previous state found; submitting all URLs");
