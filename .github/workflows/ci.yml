@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # No setup-node: the action runs on the runner's preinstalled Node, so test with that.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: node --version
+      - run: node --test test/*.test.mjs
+        shell: bash
+
+  integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write # to delete the caches this job creates
+    env:
+      # Unique per run so state from earlier runs doesn't leak in.
+      PREFIX: ci-${{ github.run_id }}-${{ github.run_attempt }}
+      KEY: abcdef0123456789
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start stub site and IndexNow endpoint
+        run: |
+          echo "SITE_DIR=$RUNNER_TEMP/site" >> "$GITHUB_ENV"
+          echo "REQUESTS=$RUNNER_TEMP/requests.jsonl" >> "$GITHUB_ENV"
+          SITE_DIR=$RUNNER_TEMP/site REQUESTS=$RUNNER_TEMP/requests.jsonl
+          mkdir -p "$SITE_DIR"
+          cp test/fixtures/site-v1/* "$SITE_DIR"
+          touch "$REQUESTS"
+          node test/stub-server.mjs 8080 "$SITE_DIR" "$REQUESTS" &
+          for _ in $(seq 20); do curl -sf http://localhost:8080/sitemap.xml > /dev/null && exit 0; sleep 0.5; done
+          exit 1
+
+      - name: Dry run without state submits nothing
+        id: dry
+        uses: ./
+        with:
+          site-url: http://localhost:8080
+          key: ${{ env.KEY }}
+          endpoint: http://localhost:8080/indexnow
+          on-missing-state: all
+          dry-run: "true"
+          cache-key-prefix: ${{ env.PREFIX }}
+      - name: Check dry run
+        env:
+          COUNT: ${{ steps.dry.outputs.submitted-count }}
+          URLS: ${{ steps.dry.outputs.submitted-urls }}
+        run: |
+          test "$COUNT" = 6
+          grep -qxF 'http://localhost:8080/blog/b?x=1&y=2' <<< "$URLS"
+          test ! -s "$REQUESTS"
+
+      - name: First run records a baseline
+        id: baseline
+        uses: ./
+        with:
+          site-url: http://localhost:8080
+          key: ${{ env.KEY }}
+          endpoint: http://localhost:8080/indexnow
+          cache-key-prefix: ${{ env.PREFIX }}
+      - name: Check baseline
+        run: |
+          test "${{ steps.baseline.outputs.submitted-count }}" = 0
+          test ! -s "$REQUESTS"
+          rm -rf "$RUNNER_TEMP/indexnow-state" # force the next run to restore from the cache
+
+      - name: Deploy a new revision
+        run: cp test/fixtures/site-v2/* "$SITE_DIR"
+
+      - name: Submit changes
+        id: changed
+        uses: ./
+        with:
+          site-url: http://localhost:8080
+          key: ${{ env.KEY }}
+          endpoint: http://localhost:8080/indexnow
+          cache-key-prefix: ${{ env.PREFIX }}
+      - name: Check changes
+        env:
+          OUTPUTS: ${{ toJSON(steps.changed.outputs) }}
+        run: |
+          echo "$OUTPUTS"
+          test "$(jq -r '"\(.added) \(.updated) \(.removed) \(."submitted-count")"' <<< "$OUTPUTS")" = "1 2 1 4"
+          jq -c '.body.urlList' "$REQUESTS"
+          test "$(jq -c '.body.urlList | sort' "$REQUESTS")" = \
+            '["http://localhost:8080/about","http://localhost:8080/new","http://localhost:8080/old","http://localhost:8080/pricing"]'
+          test "$(jq -r '.body.host' "$REQUESTS")" = localhost:8080
+          test "$(jq -r '.body.keyLocation' "$REQUESTS")" = "http://localhost:8080/$KEY.txt"
+          rm -rf "$RUNNER_TEMP/indexnow-state"
+          : > "$REQUESTS"
+
+      - name: Run again without changes
+        id: unchanged
+        uses: ./
+        with:
+          site-url: http://localhost:8080
+          key: ${{ env.KEY }}
+          endpoint: http://localhost:8080/indexnow
+          cache-key-prefix: ${{ env.PREFIX }}
+      - name: Check nothing was submitted
+        run: |
+          test "${{ steps.unchanged.outputs.submitted-count }}" = 0
+          test ! -s "$REQUESTS"
+
+      - name: Rejected submission fails the step
+        id: rejected
+        continue-on-error: true
+        uses: ./
+        with:
+          site-url: http://localhost:8080
+          key: ${{ env.KEY }}
+          endpoint: http://localhost:8080/indexnow?status=403
+          mode: all
+          cache-key-prefix: ${{ env.PREFIX }}
+      - name: Check failure
+        run: test "${{ steps.rejected.outcome }}" = failure
+
+      - name: Mode all accepts 202
+        id: all
+        uses: ./
+        with:
+          site-url: http://localhost:8080
+          key: ${{ env.KEY }}
+          endpoint: http://localhost:8080/indexnow?status=202
+          mode: all
+          cache-key-prefix: ${{ env.PREFIX }}
+      - name: Check mode all
+        run: test "${{ steps.all.outputs.submitted-count }}" = 6
+
+      - name: Delete caches created by this job
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list --repo "$GITHUB_REPOSITORY" --key "$PREFIX-" --json id --jq '.[].id' |
+            xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
