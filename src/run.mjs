@@ -146,6 +146,24 @@ export function serializeState(host, urls) {
 }
 
 /**
+ * Joins lines with newlines, keeping only as many whole lines as fit in `limit` characters.
+ * @param {string[]} lines
+ * @param {number} limit
+ * @returns {{ text: string, count: number }} the joined text and how many lines it holds
+ */
+export function joinWithinLimit(lines, limit) {
+  let length = 0;
+  let count = 0;
+  for (const line of lines) {
+    const next = length + (count > 0 ? 1 : 0) + line.length;
+    if (next > limit) break;
+    length = next;
+    count++;
+  }
+  return { text: lines.slice(0, count).join("\n"), count };
+}
+
+/**
  * @typedef {object} Result
  * @property {"baseline" | "changed" | "all"} kind what was done
  * @property {UrlMap} current URLs from the sitemap on the site's host

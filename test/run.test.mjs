@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { cacheKeys, parseConfig, readState, run, serializeState } from "../src/run.mjs";
+import { cacheKeys, joinWithinLimit, parseConfig, readState, run, serializeState } from "../src/run.mjs";
 import { fakeFetch } from "./helpers.mjs";
 
 const config = parseConfig({ "site-url": "https://example.com/", key: "abcdef123456" });
@@ -189,5 +189,16 @@ describe("run", () => {
   it("propagates submission failures so state isn't saved", async () => {
     const { deps } = setup({ [ENDPOINT]: () => new Response("invalid key", { status: 403 }) });
     await assert.rejects(run(config, PREVIOUS, deps), /403.*invalid key/);
+  });
+});
+
+describe("joinWithinLimit", () => {
+  it("joins everything that fits", () => {
+    assert.deepEqual(joinWithinLimit(["ab", "cd"], 5), { text: "ab\ncd", count: 2 });
+  });
+
+  it("keeps only whole lines", () => {
+    assert.deepEqual(joinWithinLimit(["ab", "cd", "ef"], 6), { text: "ab\ncd", count: 2 });
+    assert.deepEqual(joinWithinLimit(["abc"], 2), { text: "", count: 0 });
   });
 });

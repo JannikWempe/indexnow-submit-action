@@ -19,21 +19,32 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: node --version
       - run: node --test test/*.test.mjs
         shell: bash
 
   integration:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
       actions: write # to delete the caches this job creates
     env:
       # Unique per run so state from earlier runs doesn't leak in.
-      PREFIX: ci-${{ github.run_id }}-${{ github.run_attempt }}
+      PREFIX: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.os }}
       KEY: abcdef0123456789
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Start stub site and IndexNow endpoint
         run: |
@@ -75,8 +86,10 @@ jobs:
           endpoint: http://localhost:8080/indexnow
           cache-key-prefix: ${{ env.PREFIX }}
       - name: Check baseline
+        env:
+          COUNT: ${{ steps.baseline.outputs.submitted-count }}
         run: |
-          test "${{ steps.baseline.outputs.submitted-count }}" = 0
+          test "$COUNT" = 0
           test ! -s "$REQUESTS"
           rm -rf "$RUNNER_TEMP/indexnow-state" # force the next run to restore from the cache
 
@@ -114,8 +127,10 @@ jobs:
           endpoint: http://localhost:8080/indexnow
           cache-key-prefix: ${{ env.PREFIX }}
       - name: Check nothing was submitted
+        env:
+          COUNT: ${{ steps.unchanged.outputs.submitted-count }}
         run: |
-          test "${{ steps.unchanged.outputs.submitted-count }}" = 0
+          test "$COUNT" = 0
           test ! -s "$REQUESTS"
 
       - name: Rejected submission fails the step
@@ -129,7 +144,9 @@ jobs:
           mode: all
           cache-key-prefix: ${{ env.PREFIX }}
       - name: Check failure
-        run: test "${{ steps.rejected.outcome }}" = failure
+        env:
+          OUTCOME: ${{ steps.rejected.outcome }}
+        run: test "$OUTCOME" = failure
 
       - name: Mode all accepts 202
         id: all
@@ -141,7 +158,9 @@ jobs:
           mode: all
           cache-key-prefix: ${{ env.PREFIX }}
       - name: Check mode all
-        run: test "${{ steps.all.outputs.submitted-count }}" = 6
+        env:
+          COUNT: ${{ steps.all.outputs.submitted-count }}
+        run: test "$COUNT" = 6
 
       - name: Delete caches created by this job
         if: always()
@@ -149,4 +168,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh cache list --repo "$GITHUB_REPOSITORY" --key "$PREFIX-" --json id --jq '.[].id' |
-            xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
+            while read -r id; do gh cache delete --repo "$GITHUB_REPOSITORY" "$id"; done

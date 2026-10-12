@@ -85,7 +85,7 @@ The key is public by design (search engines fetch it from `key-location`), so yo
 | Output | Description |
 | --- | --- |
 | `submitted-count` | Number of URLs submitted. In dry-run, the number that would have been submitted. |
-| `submitted-urls` | Newline-separated submitted URLs. |
+| `submitted-urls` | Newline-separated submitted URLs. Capped at about 100,000 characters (with a warning) to stay within GitHub's output size limit; `submitted-count` is always the full number. |
 | `added` | URLs new since the last state. |
 | `updated` | URLs whose `<lastmod>` changed, including when it appeared or disappeared. |
 | `removed` | URLs in the last state but no longer in the sitemap. |
@@ -110,7 +110,9 @@ The step log groups the URLs, and the job summary shows a table of changes and t
 npm test   # node:test, no dependencies
 ```
 
-CI runs the unit tests on Linux, macOS and Windows. It also runs the action end to end (`uses: ./`) against a local stub site and IndexNow endpoint.
+CI runs the unit tests and the action end to end (`uses: ./`, against a local stub site and IndexNow endpoint) on Linux, macOS and Windows.
+
+To release, publish a GitHub release with a `vX.Y.Z` tag. The release workflow then moves the major tag (`v1`) to it. Releases are immutable; the major tag is a plain tag so it can move.
 
 ## License
 

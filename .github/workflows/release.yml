@@ -1,0 +1,35 @@
+name: Release
+
+# Points the major version tag (v1) at a newly published vX.Y.Z release, so users
+# of @v1 get it. The major tag is a plain tag, not a release, so it can still move
+# with immutable releases enabled.
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  move-major-tag:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to create or move the major tag
+    steps:
+      - name: Move major tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^(v[0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tag $TAG is not of the form vX.Y.Z"
+            exit 1
+          fi
+          major=${BASH_REMATCH[1]}
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$major" > /dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$major" -f sha="$sha" -F force=true > /dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$major" -f sha="$sha" > /dev/null
+          fi
+          echo "Moved $major to $TAG ($sha)"

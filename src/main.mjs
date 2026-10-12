@@ -9,7 +9,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { cacheKeys, parseConfig, readState, run, serializeState } from "./run.mjs";
+import { cacheKeys, joinWithinLimit, parseConfig, readState, run, serializeState } from "./run.mjs";
 
 const INPUTS = [
   "site-url",
@@ -82,6 +82,10 @@ function prepare() {
 
 const SUMMARY_ROW_LIMIT = 500;
 
+// GitHub limits outputs to 1 MB per job, counted as UTF-16 (2 bytes per character).
+// Leave most of that to the caller's other outputs.
+const SUBMITTED_URLS_OUTPUT_LIMIT = 100_000;
+
 /**
  * @param {import("./run.mjs").Config} config
  * @param {import("./run.mjs").Result} result
@@ -151,7 +155,14 @@ async function runAction() {
   }
 
   setOutput("submitted-count", result.urls.length);
-  setOutput("submitted-urls", result.urls.join("\n"));
+  const submitted = joinWithinLimit(result.urls, SUBMITTED_URLS_OUTPUT_LIMIT);
+  if (submitted.count < result.urls.length) {
+    warn(
+      `The submitted-urls output only lists the first ${submitted.count} of ${result.urls.length} URLs ` +
+        "to stay within GitHub's output size limit. submitted-count has the full number.",
+    );
+  }
+  setOutput("submitted-urls", submitted.text);
   setOutput("added", result.added.length);
   setOutput("updated", result.updated.length);
   setOutput("removed", result.removed.length);
