@@ -136,12 +136,13 @@ describe("run", () => {
   });
 
   it("records a baseline without submitting when there is no state", async () => {
-    const { submitted, deps } = setup();
+    const { submitted, warnings, deps } = setup();
     const result = await run(config, null, deps);
     assert.equal(result.kind, "baseline");
     assert.deepEqual(result.urls, []);
     assert.deepEqual(submitted, []);
     assert.equal(result.saveState, true);
+    assert.match(warnings.at(-1) ?? "", /No previous state found/);
   });
 
   it("submits everything when there is no state and on-missing-state is all", async () => {

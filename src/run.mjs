@@ -209,7 +209,13 @@ export async function run(config, previous, deps = {}) {
     diff.added = [...current.keys()];
     urls = diff.added;
   } else {
-    log("No previous state found; recording a baseline without submitting (on-missing-state: baseline)");
+    // A warning because lost state (cache eviction, a different cache scope) looks
+    // exactly like a first run, and changes since the last run are not submitted.
+    warn(
+      "No previous state found; recording a baseline without submitting (on-missing-state: baseline). " +
+        "Expected on the first run. Otherwise the state was lost (evicted after 7 days without runs, " +
+        "or saved under another branch or tag) and changes since the last run are not submitted.",
+    );
     kind = "baseline";
     urls = [];
   }

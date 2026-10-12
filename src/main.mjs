@@ -63,6 +63,15 @@ function readConfig() {
 
 function prepare() {
   const config = readConfig();
+  // Caches are scoped to the ref, and a tag run can only restore caches from that
+  // same tag or the default branch, so state saved by one tag is invisible to the next.
+  if (env("GITHUB_REF").startsWith("refs/tags/")) {
+    warn(
+      `Running on tag ref ${env("GITHUB_REF")}: the cached state is scoped to this tag and won't be ` +
+        "restored by runs for other tags, so every run starts without state. Run the action on the default " +
+        "branch instead, for example from a workflow_run-triggered workflow.",
+    );
+  }
   const keys = cacheKeys(config, { runId: env("GITHUB_RUN_ID") || "local", runAttempt: env("GITHUB_RUN_ATTEMPT") || "1" });
   const stateDir = join(env("RUNNER_TEMP") || ".", "indexnow-state", keys.safeHost);
   setOutput("state-dir", stateDir);
