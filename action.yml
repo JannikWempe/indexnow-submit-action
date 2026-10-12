@@ -61,9 +61,20 @@ outputs:
 runs:
   using: composite
   steps:
+    # The script runs on whatever node is on PATH: on self-hosted runners and in
+    # `container:` jobs it can be missing or too old for fetch and AbortSignal.timeout.
     - id: prepare
       shell: bash
-      run: node "$GITHUB_ACTION_PATH/src/main.mjs" prepare
+      run: |
+        if ! command -v node > /dev/null; then
+          echo "::error::node not found on PATH. This action needs Node.js 18 or later (on GitHub-hosted runners it is preinstalled; in container jobs, use an image with Node)."
+          exit 1
+        fi
+        if [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 18 ]; then
+          echo "::error::Node.js $(node --version) is too old. This action needs Node.js 18 or later."
+          exit 1
+        fi
+        node "$GITHUB_ACTION_PATH/src/main.mjs" prepare
       env:
         INPUT_SITE_URL: ${{ inputs.site-url }}
         INPUT_KEY: ${{ inputs.key }}

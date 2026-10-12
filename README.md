@@ -9,7 +9,7 @@ IndexNow is meant for URLs that were recently added, updated or deleted, not for
 3. submits URLs that were **added**, **updated** (`<lastmod>` changed) or **removed**,
 4. saves the new state only if every submission succeeded, so failures are retried on the next run.
 
-It's a composite action with a dependency-free Node script that runs on the runner's preinstalled Node. It doesn't need or touch `actions/setup-node`.
+It's a composite action with a dependency-free Node script that runs on the runner's preinstalled Node. It doesn't need or touch `actions/setup-node`. It needs Node.js 18 or later on `PATH`, which matters on self-hosted runners and in `container:` jobs.
 
 ## Usage
 
