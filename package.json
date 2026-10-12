@@ -1,0 +1,10 @@
+{
+  "name": "indexnow-submit-action",
+  "private": true,
+  "type": "module",
+  "description": "GitHub Action that submits only changed sitemap URLs to IndexNow",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
