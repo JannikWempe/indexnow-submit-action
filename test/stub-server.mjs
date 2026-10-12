@@ -10,6 +10,7 @@ import { appendFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join, normalize } from "node:path";
+import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 
 /**
@@ -58,7 +59,7 @@ export function startServer({ port = 0, siteDir, onSubmit = () => {} }) {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [port, siteDir, requestsFile] = process.argv.slice(2);
   const { url } = await startServer({
     port: Number(port),
